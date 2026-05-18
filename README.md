@@ -10,7 +10,7 @@ This repository contains the complete computational workflow developed for the p
 
 The project was developed as part of a research study focused on identifying compounds with predicted anti-MRSA activity against Penicillin-Binding Protein 2a (PBP2a), a clinically important resistance determinant in methicillin-resistant *Staphylococcus aureus* (MRSA).
 
-The workflow includes:
+The workflow includes:-
 - dataset curation,
 - molecular standardization,
 - Morgan fingerprint generation,
@@ -134,7 +134,7 @@ RandomForestRegressor(
 
 ## Cluster-Based Validation
 
-Instead of random splitting, compounds were separated using cluster-based validation to reduce chemical information leakage.
+ compounds were separated using cluster-based validation to reduce chemical information leakage.
 
 Workflow:
 1. Generate Morgan fingerprints
