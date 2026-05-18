@@ -44,31 +44,22 @@ The workflow includes:-
 ```text
 pbp2a_qsar_project/
 │
+├── Autodock/                  # External docking workflow/tool [Dockflow]
+│
 ├── data/
-│   ├── raw/
-│   └── processed/
+│   └── raw/
 │
 ├── models/
-│   ├── trained/
-│   └── metrics/
 │
 ├── results/
-│   ├── figures/
-│   └── tables/
 │
 ├── scripts/
-│   └── run_pipeline.py
 │
 ├── src/
-│   ├── data/
-│   ├── features/
-│   ├── models/
-│   ├── validation/
-│   └── visualization/
 │
-├── requirements.txt
+├── README.md
 │
-└── README.md
+└── requirements.txt
 ```
 
 ---
@@ -200,6 +191,53 @@ The pipeline automatically generates:
 - Applicability domain compounds
 - Y-randomization statistics
 - Validation metrics
+
+---
+
+# Docking Workflow and Outputs
+
+The `Autodock/` directory contains the molecular docking inputs and outputs generated during structural validation and post-QSAR prioritization of predicted PBP2a inhibitors.
+
+Docking was performed against the PBP2a crystal structure (PDB ID: 4CJN) to evaluate the predicted binding behavior of top-ranked QSAR candidates.
+
+The docking workflow was performed using the separate [Dockflow](https://github.com/VajraPutra/Dockflow) framework.
+
+## Directory Contents
+
+### `Autodock Input/`
+Contains:
+- receptor structure files,
+- input ligand datasets,
+- docking preparation inputs.
+
+Current contents include:
+- `4CJN.pdb`
+- `pbp2a_raw_data.csv`
+
+### `Autodock Output/results/4CJN/`
+Contains:
+- docking poses,
+- docking result files,
+- AutoDock-generated scoring outputs,
+- docking logs,
+- prioritized hit tables.
+
+Current contents include:
+- `results.csv`
+- `top_hits.csv`
+- docking pose directories,
+- receptor and ligand preparation outputs,
+- docking logs.
+
+The docking workflow involved:
+- receptor preparation,
+- ligand preparation,
+- docking parameter configuration,
+- pose generation,
+- docking score analysis,
+- interaction assessment.
+
+Docking analysis was used as a complementary structural validation step and not as a standalone indicator of biological activity.
 
 ---
 
