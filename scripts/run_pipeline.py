@@ -109,17 +109,20 @@ MODELS_DIR = "models/trained"
 
 METRICS_DIR = "models/metrics"
 
+SPLITS_DIR = "data/splits"
+
+PROCESSED_DIR = "data/processed"
+
 # =========================================================
 # CREATE OUTPUT FOLDERS
 # =========================================================
 
 os.makedirs(FIGURES_DIR, exist_ok=True)
-
 os.makedirs(TABLES_DIR, exist_ok=True)
-
 os.makedirs(MODELS_DIR, exist_ok=True)
-
 os.makedirs(METRICS_DIR, exist_ok=True)
+os.makedirs(SPLITS_DIR, exist_ok=True)
+os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 # =========================================================
 # LOAD DATA
@@ -143,6 +146,8 @@ def clean_dataset(df):
 
     print("\n[2] Cleaning dataset...")
 
+    removed_records = []
+
     print("\nEndpoint distribution:")
 
     print(
@@ -153,6 +158,19 @@ def clean_dataset(df):
     # =====================================================
     # KEEP ONLY IC50
     # =====================================================
+
+    non_ic50 = df[
+        df["standard_type"]
+        .astype(str)
+        .str.upper() != "IC50"
+    ]
+
+    for _, row in non_ic50.iterrows():
+
+        removed_records.append({
+            "molecule_chembl_id": row.get("molecule_chembl_id", "UNKNOWN"),
+            "reason_removed": "Non-IC50 endpoint"
+        })
 
     df = df[
         df["standard_type"]
@@ -166,14 +184,45 @@ def clean_dataset(df):
     )
 
     # =====================================================
-    # REMOVE MISSING
+    # REMOVE MISSING VALUES
     # =====================================================
+
+    before_missing = len(df)
+
+    missing_df = df[
+        df.isnull().any(axis=1)
+    ]
+
+    for _, row in missing_df.iterrows():
+
+        removed_records.append({
+            "molecule_chembl_id": row.get("molecule_chembl_id", "UNKNOWN"),
+            "reason_removed": "Missing values"
+        })
 
     df = remove_missing_values(df)
 
+    print(
+        f"Removed missing rows: "
+        f"{before_missing - len(df)}"
+    )
+
     # =====================================================
-    # REMOVE CENSORED
+    # REMOVE CENSORED VALUES
     # =====================================================
+
+    censored = df[
+        df["standard_value"]
+        .astype(str)
+        .str.contains(">|<", regex=True)
+    ]
+
+    for _, row in censored.iterrows():
+
+        removed_records.append({
+            "molecule_chembl_id": row.get("molecule_chembl_id", "UNKNOWN"),
+            "reason_removed": "Censored value (> or <)"
+        })
 
     df = remove_censored_values(df)
 
@@ -181,32 +230,80 @@ def clean_dataset(df):
     # REMOVE DUPLICATES
     # =====================================================
 
+    duplicated = df[
+        df.duplicated(
+            subset=["canonical_smiles"],
+            keep="first"
+        )
+    ]
+
+    for _, row in duplicated.iterrows():
+
+        removed_records.append({
+            "molecule_chembl_id": row.get("molecule_chembl_id", "UNKNOWN"),
+            "reason_removed": "Duplicate SMILES"
+        })
+
     before_duplicates = len(df)
 
     df = remove_duplicate_smiles(df)
 
-    removed_duplicates = (
-        before_duplicates - len(df)
-    )
-
     print(
         f"Removed duplicates: "
-        f"{removed_duplicates}"
+        f"{before_duplicates - len(df)}"
     )
 
     # =====================================================
-    # VALIDATE NUMERIC
+    # VALIDATE NUMERIC ACTIVITY
     # =====================================================
+
+    before_numeric = len(df)
 
     df = validate_numeric_activity(df)
 
+    print(
+        f"Removed non-numeric rows: "
+        f"{before_numeric - len(df)}"
+    )
+
     # =====================================================
-    # REMOVE INVALID VALUES
+    # REMOVE INVALID ACTIVITY VALUES
     # =====================================================
+
+    invalid_values = df[
+        df["standard_value"] <= 0
+    ]
+
+    for _, row in invalid_values.iterrows():
+
+        removed_records.append({
+            "molecule_chembl_id": row.get("molecule_chembl_id", "UNKNOWN"),
+            "reason_removed": "Invalid IC50 value"
+        })
 
     df = df[
         df["standard_value"] > 0
     ]
+
+    # =====================================================
+    # SAVE REMOVED COMPOUNDS
+    # =====================================================
+
+    removed_df = pd.DataFrame(removed_records)
+
+    removed_df.to_csv(
+        f"{PROCESSED_DIR}/removed_compounds.csv",
+        index=False
+    )
+
+    # =====================================================
+    # SAVE CURATED DATASET
+    # =====================================================
+
+    df.to_csv(
+        f"{PROCESSED_DIR}/curated_dataset.csv",
+        index=False
+    )
 
     print(
         f"\nFinal cleaned dataset: "
@@ -331,12 +428,12 @@ def generate_features(df):
     return X
 
 # =========================================================
-# ADD CLUSTERS
+# ADD SCAFFOLDS
 # =========================================================
 
 def add_scaffolds(df):
 
-    print("\n[6] Generating cluster assignments...")
+    print("\n[6] Generating scaffold assignments...")
 
     scaffolds = (
         generate_bemis_murcko_scaffolds(
@@ -349,169 +446,146 @@ def add_scaffolds(df):
     return df
 
 # =========================================================
+# SAVE SPLITS
+# =========================================================
+
+def save_splits(train_df, test_df):
+
+    print("\nSaving train/test split files...")
+
+    train_export = train_df[[
+        "molecule_chembl_id",
+        "canonical_smiles",
+        "standardized_smiles",
+        "pIC50",
+        "scaffold"
+    ]]
+
+    train_export.to_csv(
+        f"{SPLITS_DIR}/train_set.csv",
+        index=False
+    )
+
+    test_export = test_df[[
+        "molecule_chembl_id",
+        "canonical_smiles",
+        "standardized_smiles",
+        "pIC50",
+        "scaffold"
+    ]]
+
+    test_export.to_csv(
+        f"{SPLITS_DIR}/test_set.csv",
+        index=False
+    )
+
+    train_scaffolds = (
+        train_df["scaffold"]
+        .value_counts()
+        .reset_index()
+    )
+
+    train_scaffolds.columns = [
+        "scaffold",
+        "compound_count"
+    ]
+
+    train_scaffolds.to_csv(
+        f"{SPLITS_DIR}/train_scaffolds.csv",
+        index=False
+    )
+
+    test_scaffolds = (
+        test_df["scaffold"]
+        .value_counts()
+        .reset_index()
+    )
+
+    test_scaffolds.columns = [
+        "scaffold",
+        "compound_count"
+    ]
+
+    test_scaffolds.to_csv(
+        f"{SPLITS_DIR}/test_scaffolds.csv",
+        index=False
+    )
+
+    with open(
+        f"{SPLITS_DIR}/split_metadata.txt",
+        "w"
+    ) as f:
+
+        f.write(
+            "Split Method: Scaffold-based split\n"
+        )
+
+        f.write(
+            "Random Seed: 42\n"
+        )
+
+        f.write(
+            f"Training Molecules: {len(train_df)}\n"
+        )
+
+        f.write(
+            f"Testing Molecules: {len(test_df)}\n"
+        )
+
+    print("Train/test split files saved.")
+
+# =========================================================
 # TRAIN MODEL
 # =========================================================
 
-def train_model(
-    train_df,
-    test_df
-):
+def train_model(train_df, test_df):
 
     print("\n[7] Training Random Forest model...")
 
-    # =====================================================
-    # FEATURES
-    # =====================================================
-
     X_train = generate_morgan_fingerprints(
-
         train_df["standardized_smiles"],
-
         radius=2,
-
         bits=2048
     )
 
     X_test = generate_morgan_fingerprints(
-
         test_df["standardized_smiles"],
-
         radius=2,
-
         bits=2048
     )
 
     y_train = train_df["pIC50"].values
-
     y_test = test_df["pIC50"].values
 
-    print(
-        f"\nTraining set shape: "
-        f"{X_train.shape}"
-    )
-
-    print(
-        f"Test set shape: "
-        f"{X_test.shape}"
-    )
-
-    # =====================================================
-    # MODEL
-    # =====================================================
-
     model = RandomForestRegressor(
-
         n_estimators=1000,
-
         max_depth=None,
-
         min_samples_split=2,
-
         min_samples_leaf=1,
-
         max_features="sqrt",
-
         bootstrap=True,
-
         random_state=42,
-
         n_jobs=-1
     )
 
-    # =====================================================
-    # TRAIN
-    # =====================================================
-
     print("\nTraining Random Forest...")
 
-    model.fit(
-        X_train,
-        y_train
-    )
+    model.fit(X_train, y_train)
 
-    # =====================================================
-    # PREDICT
-    # =====================================================
+    predictions = model.predict(X_test)
 
-    predictions = model.predict(
-        X_test
-    )
-
-    train_predictions = model.predict(
-        X_train
-    )
-
-    # =====================================================
-    # SAVE PREDICTIONS
-    # =====================================================
+    train_predictions = model.predict(X_train)
 
     pred_df = pd.DataFrame({
-
-        "ChEMBL_ID":
-            test_df["molecule_chembl_id"],
-
-        "Actual_pIC50":
-            y_test,
-
-        "Predicted_pIC50":
-            predictions
+        "ChEMBL_ID": test_df["molecule_chembl_id"],
+        "Actual_pIC50": y_test,
+        "Predicted_pIC50": predictions
     })
 
     pred_df.to_csv(
-
         f"{TABLES_DIR}/test_predictions.csv",
-
         index=False
     )
-
-    # =====================================================
-    # PREDICTED VS ACTUAL PLOT
-    # =====================================================
-
-    plt.figure(figsize=(7, 7))
-
-    plt.scatter(
-        y_test,
-        predictions,
-        alpha=0.7
-    )
-
-    min_val = min(
-        y_test.min(),
-        predictions.min()
-    )
-
-    max_val = max(
-        y_test.max(),
-        predictions.max()
-    )
-
-    plt.plot(
-        [min_val, max_val],
-        [min_val, max_val],
-        linestyle="--"
-    )
-
-    plt.xlabel("Actual pIC50")
-
-    plt.ylabel("Predicted pIC50")
-
-    plt.title(
-        "Predicted vs Actual pIC50"
-    )
-
-    plt.tight_layout()
-
-    plt.savefig(
-        f"{FIGURES_DIR}/predicted_vs_actual.png",
-        dpi=300
-    )
-
-    plt.close()
-
-    # =====================================================
-    # METRICS
-    # =====================================================
 
     metrics = evaluate_model(
         y_test,
@@ -524,78 +598,46 @@ def train_model(
 
         print(f"{k}: {v:.4f}")
 
-    # =====================================================
-    # CROSS VALIDATION
-    # =====================================================
-
     cv_scores = run_cross_validation(
-
         model,
-
         X_train,
-
         y_train
     )
 
     print("\n===== CROSS VALIDATION =====")
 
     print(
-        f"Mean CV R²: "
-        f"{cv_scores.mean():.4f}"
+        f"Mean CV R²: {cv_scores.mean():.4f}"
     )
 
     print(
-        f"STD CV R² : "
-        f"{cv_scores.std():.4f}"
+        f"STD CV R² : {cv_scores.std():.4f}"
     )
 
-    # =====================================================
-    # RESIDUAL ANALYSIS
-    # =====================================================
-
     generate_residual_analysis(
-
         y_test,
-
         predictions
     )
 
-    # =====================================================
-    # WILLIAMS PLOT
-    # =====================================================
-
     generate_williams_plot(
-
         X_train,
         X_test,
-
         y_train,
         y_test,
-
         train_predictions,
         predictions,
-
         train_df["molecule_chembl_id"],
         test_df["molecule_chembl_id"]
     )
 
-    # =====================================================
-    # Y RANDOMIZATION
-    # =====================================================
-
     randomized_r2_scores = run_y_randomization(
-
         X_train,
-
         y_train,
-
         n_permutations=100
     )
 
     plot_y_randomization(
-
         randomized_r2_scores,
-
         metrics["R2"]
     )
 
@@ -603,32 +645,16 @@ def train_model(
         randomized_r2_scores
     )
 
-    # =====================================================
-    # SAVE METRICS
-    # =====================================================
-
     metrics_dict = {
-
-        "R2":
-            float(metrics["R2"]),
-
-        "RMSE":
-            float(metrics["RMSE"]),
-
-        "MAE":
-            float(metrics["MAE"]),
-
-        "CV_Mean_R2":
-            float(cv_scores.mean()),
-
-        "CV_STD_R2":
-            float(cv_scores.std())
+        "R2": float(metrics["R2"]),
+        "RMSE": float(metrics["RMSE"]),
+        "MAE": float(metrics["MAE"]),
+        "CV_Mean_R2": float(cv_scores.mean()),
+        "CV_STD_R2": float(cv_scores.std())
     }
 
     with open(
-
         f"{METRICS_DIR}/metrics.json",
-
         "w"
     ) as f:
 
@@ -638,14 +664,8 @@ def train_model(
             indent=4
         )
 
-    # =====================================================
-    # SAVE MODEL
-    # =====================================================
-
     joblib.dump(
-
         model,
-
         f"{MODELS_DIR}/random_forest_model.pkl"
     )
 
@@ -657,55 +677,35 @@ def train_model(
 
 def main():
 
-    print(
-        "\n===== PBP2a QSAR PIPELINE ====="
-    )
-
-    # LOAD
+    print("\n===== PBP2a QSAR PIPELINE =====")
 
     df = load_dataset()
 
-    # CLEAN
-
     df = clean_dataset(df)
-
-    # STANDARDIZE
 
     df = standardize_dataset(df)
 
-    # pIC50
-
     df = convert_to_pic50(df)
-
-    # DISTRIBUTION PLOT
 
     plot_pic50_distribution(df)
 
-    # FEATURES
-
     X = generate_features(df)
 
-    # CLUSTERS
-
     df = add_scaffolds(df)
-
-    # SPLIT
 
     train_df, test_df = (
         perform_scaffold_split(df)
     )
 
+    save_splits(train_df, test_df)
+
     print(
-        f"\nTrain molecules: "
-        f"{len(train_df)}"
+        f"\nTrain molecules: {len(train_df)}"
     )
 
     print(
-        f"Test molecules : "
-        f"{len(test_df)}"
+        f"Test molecules : {len(test_df)}"
     )
-
-    # TRAIN MODEL
 
     model = train_model(
         train_df,
