@@ -48,7 +48,9 @@ pbp2a_qsar_project/
 │
 ├── data/
 │   └── raw/
-│
+│   └── splits/
+│   └── processed/
+│ 
 ├── models/
 │
 ├── results/
