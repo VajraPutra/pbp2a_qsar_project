@@ -358,6 +358,11 @@ QSAR predictions, docking results, and physicochemical analyses do not constitut
 
 ---
 
+# P.S
+
+reference inhibitors docking results are added inside Autodock/reference_inhibitor_docking_result
+
+---
 # Citation
 
 If you use this repository or workflow in academic work, please cite the associated research article.
